@@ -117,12 +117,14 @@ Evaluated on a held-out test set from 3,299 human-authored Clone Hero/YARG pro d
 
 Aggregate per-instrument onset F1 against ground-truth Clone Hero/YARG charts. Songs were sampled from a held-out pool of 3,299 candidates and pre-screened by a single audio-feature operating envelope: median Demucs `htdemucs_6s` drum-stem RMS (1-second windows, 22050 Hz mono) ≥ 0.018. Eval is Expert difficulty, ±100 ms tolerance with a per-song global offset search (±200 ms / 10 ms steps) to neutralize chart-sync conventions.
 
-| Instrument | F1 | Precision | Recall |
-|------------|------|-----------|--------|
-| Drums      | 83.8% | 82.4% | 85.4% |
-| Guitar     | 65.1% | 74.5% | 57.8% |
-| Bass       | 69.4% | 65.8% | 73.4% |
-| Vocals     | 53.9% | 63.2% | 47.0% |
+`LaneAcc` is `eval_benchmark.py`'s `lane_accuracy` field (already computed and stored per-song in `benchmark_results.json`, not previously surfaced here): of the onsets counted as a true positive for F1 (right time), the fraction that also landed on the correct fret/lane. F1 alone credits a note that fires at the right time on the wrong fret as correct, so it does not by itself tell you whether the pitch→fret mapping step is working.
+
+| Instrument | F1 | Precision | Recall | LaneAcc |
+|------------|------|-----------|--------|---------|
+| Drums      | 83.8% | 82.4% | 85.4% | 64.8% |
+| Guitar     | 65.1% | 74.5% | 57.8% | 19.7% |
+| Bass       | 69.4% | 65.8% | 73.4% | 19.7% |
+| Vocals     | 53.9% | 63.2% | 47.0% | 13.2% |
 
 Reproduce with:
 
@@ -133,6 +135,12 @@ python scripts/eval_benchmark.py \
   --tolerance-ms 100 \
   --global-offset-search \
   --out benchmark_results.json
+```
+
+`eval_benchmark.py` already computes `lane_accuracy` per song; to re-aggregate it (and F1/Precision/Recall) from an existing `benchmark_results.json` without re-running inference or evaluation:
+
+```bash
+python scripts/report_lane_accuracy.py benchmark_results.json
 ```
 
 ## Quick Start
