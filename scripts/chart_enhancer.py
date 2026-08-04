@@ -818,21 +818,35 @@ class ChartEnhancer:
     def apply_difficulty_reduction(self, track: mido.MidiTrack) -> mido.MidiTrack:
         """
         Apply proper difficulty reduction to Hard/Medium/Easy notes in a track.
-        
-        The track already has notes in all difficulty ranges (Expert 96-100, 
-        Hard 84-88, Medium 72-76, Easy 60-64), but they're currently identical.
-        We need to thin them out appropriately.
+
+        Historically this assumed Hard/Medium/Easy were identical copies of
+        Expert and always needed thinning. That's no longer true: the guitar/
+        bass track builders already call reduce_to_difficulty() (via
+        src/inference/guitar_bass.py) before this runs, so the lower
+        difficulties are usually already properly reduced and C3-legal. If we
+        don't skip here, we re-thin already-thinned notes and re-apply a
+        second, worse chord-shape pass on top of the first one for no
+        benefit. Mirrors the equivalent has_hard/has_medium/has_easy guard in
+        apply_drums_difficulty_reduction().
         """
         import random
         random.seed(42)
-        
+
         # Collect all events with absolute times
         events = []
         abs_tick = 0
-        
+
         for msg in track:
             abs_tick += msg.time
             events.append((abs_tick, msg))
+
+        has_hard = any(84 <= msg.note <= 88 for _, msg in events if msg.type == 'note_on' and msg.velocity > 0)
+        has_medium = any(72 <= msg.note <= 76 for _, msg in events if msg.type == 'note_on' and msg.velocity > 0)
+        has_easy = any(60 <= msg.note <= 64 for _, msg in events if msg.type == 'note_on' and msg.velocity > 0)
+
+        if has_hard and has_medium and has_easy:
+            logger.info("Track already has all difficulties - skipping reduction")
+            return track
         
         # Group note events by difficulty and time
         expert_notes = {}  # tick -> list of (note, vel, is_on)
