@@ -305,6 +305,182 @@ Each MIDI contains up to 5 instrument tracks:
 
 Four difficulty levels per instrument: Expert, Hard, Medium, Easy (progressive note reduction).
 
+## Custom model bundles
+
+The repository `checkpoints/` layout remains the default. To evaluate or ship
+a fine-tuned model without replacing it, set `STRUM_MODEL_BUNDLE` to a
+directory containing `strum-model-bundle.json` (or directly to that file).
+Each path is relative to the manifest, so a bundle can be copied as one
+directory. Components not declared by a bundle keep using the repository
+defaults, which makes small targeted experiments safe.
+
+```json
+{
+  "schema_version": 1,
+  "model_id": "drums-v14-finetune-2026-08",
+  "compatibility": {
+    "manifest_schema": 1,
+    "strum_version": ">=0.1.0",
+    "strum_revision": "<pinned-strum-git-revision>"
+  },
+  "components": {
+    "drums.v14_onset": {
+      "checkpoint": "weights/best.pt",
+      "sha256": "<64-character lowercase sha256>"
+    },
+    "drums.ensemble.v17": {
+      "checkpoint": "weights/v17-best.pt",
+      "config": "configs/onset_classifier_v17.yaml"
+    },
+    "guitar.onset": {"checkpoint": "weights/guitar-onset.pt"}
+  }
+}
+```
+
+Validate a candidate without loading model weights, or list valid bundles in
+a user model directory:
+
+```bash
+python -m src.model_bundle validate /path/to/bundle --check-files --verify-hashes
+python -m src.model_bundle list /path/to/models
+```
+
+Current production integration recognizes `drums.v14_onset`,
+`drums.ensemble.v2` through `drums.ensemble.v17`, and `guitar.onset`.
+`compatibility.strum_revision` is optional but recommended for portable
+bundles: it records the STRUM Git revision the model was trained against. Set
+`STRUM_SOURCE_REVISION` to the source revision pinned by a caller (such as an
+editor integration) to enforce it. Otherwise validation reports the declared
+revision as unverified, rather than treating source trees without Git metadata
+as incompatible.
+
+### Chart-pair fine-tuning prototype
+
+`scripts/train_chart_transform.py` is a small CPU/CUDA baseline for learned
+chart-to-chart stages, including Expert → lower-difficulty experiments. It
+uses local paired chart events and a song-level split. It can also condition
+each source event on a local song through a small RMS/transient feature vector;
+it never packages song audio or paths into the dataset export or model bundle.
+Every dataset needs a `dataset-manifest.json` containing a
+non-empty `provenance` and `license`, plus JSONL pairs in the
+`strum-chart-pairs/v1` format. Copy
+`configs/chart_transform_finetune.yaml`, set the local paths, then run:
+
+```bash
+python scripts/train_chart_transform.py --config /path/to/experiment.yaml
+```
+
+Set `device: auto` to train on `cuda:0` when CUDA is available (otherwise CPU),
+or set `device: cpu`, `device: cuda`, or `device: cuda:<index>` explicitly. The resolved device
+and CUDA adapter name are recorded in `training-metadata.json`; an explicit
+CUDA request fails clearly when that device is unavailable. The small baseline
+is intended to validate data and bundle plumbing, so meaningful GPU utilization
+requires a larger windowed dataset and sequence model.
+
+The dataset manifest and each JSONL record are intentionally small and
+portable:
+
+```jsonc
+// dataset-manifest.json
+{
+  "schema_version": 1,
+  "format": "strum-chart-pairs/v1",
+  "dataset_id": "my-authorized-chart-pairs",
+  "records": "pairs.jsonl",
+  "provenance": "where and how the paired charts were obtained",
+  "license": "license or permission covering model-training use"
+}
+// pairs.jsonl (one JSON object per line)
+{
+  "song_id": "stable-song-id",
+  "source_difficulty": "Expert",
+  "target_difficulty": "Hard",
+  "source_events": [{"time_ms": 1000, "lanes": [0, 2]}],
+  "target_events": [{"time_ms": 1000, "lanes": [0]}]
+}
+```
+
+`lanes` are zero-based 5-fret/lane indices by default. A target event is
+matched to its nearest Expert event within `alignment_tolerance_ms`; unmatched
+Expert events learn the all-off target. This deliberately modest baseline does
+not yet model target-only inserted notes or ergonomic sequence decisions.
+
+To condition training on songs, keep the private audio mapping separate from
+the portable chart-pair dataset. Set `audio_feature_mode: rms_onset_v1` and
+`audio_manifest` in the training config (or pass both
+`--audio-feature-mode rms_onset_v1 --audio-manifest ...`). Paths are relative
+to the audio manifest, so it can live next to a private local song library
+without copying audio to the dataset or bundle:
+
+```json
+{
+  "schema_version": 1,
+  "format": "strum-local-audio-assets/v1",
+  "assets": [
+    {"song_id": "stable-song-id", "audio": "song.ogg"}
+  ]
+}
+```
+
+`ffmpeg` decodes local audio to bounded mono PCM for this prototype. The
+checkpoint records the feature schema and requires the same `--song` during
+inference:
+
+```bash
+python scripts/infer_chart_transform.py \
+  --checkpoint /path/to/bundle/weights/chart_transform.pt \
+  --source-events /path/to/expert-events.json \
+  --song /path/to/local/song.ogg \
+  --output /path/to/hard-events.json
+```
+
+This is an audio-conditioned event baseline, not a learned audio encoder. It
+is useful for validating the data contract and song alignment; the next model
+should use guitar/stem-aware temporal windows and report a held-out,
+song-disjoint comparison against the chart-only baseline.
+
+To prepare authorized, extracted Clone Hero/YARG charts locally, use the
+five-lane bridge on directories of `notes.mid` files (or pass a text list with
+`--list-file`). Build one dataset per instrument:
+
+```bash
+python scripts/prepare_instrument_chart_pairs.py \
+  --input /path/to/extracted-song-folders \
+  --output-dir /path/to/local/guitar-expert-hard \
+  --instrument guitar \
+  --target-difficulty Hard \
+  --dataset-id my-guitar-pairs-v1 \
+  --provenance "authorized local chart export" \
+  --license "permission recorded by the dataset owner"
+```
+
+It supports `PART GUITAR`, `PART BASS`, `PART KEYS`, and `PART DRUMS` through
+the same standard 5-lane MIDI ranges (Expert 96–100; Hard 84–88; Medium 72–76;
+Easy 60–64), and writes `pairs.jsonl` plus `dataset-manifest.json`. Each
+dataset and resulting component is instrument-labelled, so a Bass model cannot
+be mistaken for Guitar. Open notes and modifier notes are excluded from this
+first five-lane baseline. Song IDs combine a sanitized parent-folder label and
+a content hash, so output records do not reveal absolute input paths. Existing
+dataset files are preserved unless `--overwrite` is explicitly supplied.
+
+For compatibility with the earlier Guitar-only prototype, an old
+`strum-chart-pairs/v1` manifest or record without `instrument` is treated as
+Guitar and the resulting component is labelled accordingly. New exports always
+write the explicit instrument label.
+
+`PART VOCALS` and Pro Guitar/Pro Keys deliberately do not pass through this
+five-lane bridge: vocals are pitch/phrase/lyric sequences and Pro instruments
+use fret/string semantics. They need their own event schemas and losses, not a
+lossy conversion to five lanes. The original
+`prepare_guitar_chart_pairs.py` remains a compatible Guitar-default alias.
+
+The output is a registry-valid bundle plus reproducibility config, split IDs,
+provenance/license, alignment counts, and validation metrics. Set
+`init_checkpoint` to a compatible prior `EventTransformMLP` checkpoint to
+fine-tune it. STRUM releases weights and a benchmark manifest, not its
+original community-chart training corpus; supply only chart pairs you are
+authorized to use.
+
 ## Development
 
 Developed on NVIDIA DGX Spark (GB10 GPU, CUDA 12.8). Trained on ~5,000 human-authored pro drum charts from the Clone Hero community.

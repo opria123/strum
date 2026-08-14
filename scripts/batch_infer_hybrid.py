@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.models.drums_v13 import TwoStageDrumsCRNN
 from src.models.onset_classifier import OnsetClassifier
 from src.models.tom_refinement import TomRefinementCNN
+from src.model_bundle import get_active_bundle
 from src.preprocessing.parsers.midi_parser import DrumHit, DrumChart, TempoEvent, TimeSignature
 from scripts.chart_postprocess import postprocess_chart
 from src.export.midi import export_all_difficulties
@@ -97,11 +98,28 @@ def _reset_trace():
     _trace_counter["n"] = 0
 
 # ── Paths ──
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("output/hybrid")
+MODEL_BUNDLE = get_active_bundle()
+
+
+def _bundle_component_paths(
+    component: str,
+    checkpoint: str,
+    config: str | None = None,
+) -> tuple[str, str | None]:
+    """Resolve a bundle override while retaining the historic local layout."""
+    default_checkpoint = PROJECT_ROOT / checkpoint
+    default_config = PROJECT_ROOT / config if config else None
+    resolved_checkpoint = MODEL_BUNDLE.checkpoint(component, default_checkpoint)
+    resolved_config = MODEL_BUNDLE.config(component, default_config)
+    return str(resolved_checkpoint), str(resolved_config) if resolved_config else None
 
 # ── V14 onset detector ──
-V14_CHECKPOINT = "checkpoints/drums_v14/best.pt"
+V14_CHECKPOINT, _ = _bundle_component_paths(
+    "drums.v14_onset", "checkpoints/drums_v14/best.pt"
+)
 CYMBAL_ONSET_CHECKPOINT = "checkpoints/drums_cymbal_onset/best_union_f1.pt"
 USE_CYMBAL_ONSET = os.environ.get("STRUM_CYMBAL_ONSET", "0") == "1"  # Disabled: +onsets but ensemble misclassifies them
 CYMBAL_ONSET_THRESHOLD = 0.35  # Lower than main onset (0.50) — cymbal head is targeted
@@ -192,21 +210,22 @@ TOM_CLASSES_MC = {3: 1, 5: 2, 7: 3}  # MC class idx → tom refinement label (1=
 TOM_LABEL_TO_MC = {1: 3, 2: 5, 3: 7}  # tom refinement label → MC class idx
 
 # ── Onset classifier ensemble ──
+def _ensemble_entry(name: str, version: str, config: str, checkpoint: str) -> dict[str, str]:
+    resolved_checkpoint, resolved_config = _bundle_component_paths(
+        f"drums.ensemble.{version}", checkpoint, config
+    )
+    assert resolved_config is not None
+    return {"name": name, "config": resolved_config, "checkpoint": resolved_checkpoint}
+
+
 ENSEMBLE_MODELS = [
-    {"name": "V2", "config": "configs/onset_classifier.yaml",
-     "checkpoint": "checkpoints/onset_classifier/best_f1.pt"},
-    {"name": "V4", "config": "configs/onset_classifier_v4.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v4/best_f1.pt"},
-    {"name": "V6", "config": "configs/onset_classifier_v6.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v6/best_f1.pt"},
-    {"name": "V12c", "config": "configs/onset_classifier_v12_clean.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v12_clean/best_f1.pt"},
-    {"name": "V15", "config": "configs/onset_classifier_v15.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v15/best_f1.pt"},
-    {"name": "V16", "config": "configs/onset_classifier_v16.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v16/best_f1.pt"},
-    {"name": "V17", "config": "configs/onset_classifier_v17.yaml",
-     "checkpoint": "checkpoints/onset_classifier_v17/best_f1.pt"},
+    _ensemble_entry("V2", "v2", "configs/onset_classifier.yaml", "checkpoints/onset_classifier/best_f1.pt"),
+    _ensemble_entry("V4", "v4", "configs/onset_classifier_v4.yaml", "checkpoints/onset_classifier_v4/best_f1.pt"),
+    _ensemble_entry("V6", "v6", "configs/onset_classifier_v6.yaml", "checkpoints/onset_classifier_v6/best_f1.pt"),
+    _ensemble_entry("V12c", "v12c", "configs/onset_classifier_v12_clean.yaml", "checkpoints/onset_classifier_v12_clean/best_f1.pt"),
+    _ensemble_entry("V15", "v15", "configs/onset_classifier_v15.yaml", "checkpoints/onset_classifier_v15/best_f1.pt"),
+    _ensemble_entry("V16", "v16", "configs/onset_classifier_v16.yaml", "checkpoints/onset_classifier_v16/best_f1.pt"),
+    _ensemble_entry("V17", "v17", "configs/onset_classifier_v17.yaml", "checkpoints/onset_classifier_v17/best_f1.pt"),
 ]
 
 # Env-controlled V12c variant swap (A/B test community-trained vs clean-trained V12c).

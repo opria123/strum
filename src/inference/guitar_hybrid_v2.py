@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from src.models.guitar_v1 import GuitarOnsetCRNN, OnsetCRNNConfig  # noqa: E402
 from src.inference.guitar_neural import GuitarEvent, FRET_TO_MIDI  # noqa: E402
+from src.model_bundle import get_active_bundle  # noqa: E402
 import preprocess_guitar_windows as pgw  # noqa: E402
 
 log = logging.getLogger("guitar_hybrid_v2")
@@ -724,7 +725,10 @@ def export_events_to_midi_with_sustain(
 
 # ─────────────────────────── batch_pipeline adapter ─────────────────────────
 _HYBRID_CHARTER_CACHE: dict[str, "GuitarHybridV2Charter"] = {}
-_DEFAULT_HYBRID_ONSET_CKPT = ROOT / "checkpoints" / "guitar_v2" / "guitar_v2_onset" / "best.pt"
+_DEFAULT_HYBRID_ONSET_CKPT = get_active_bundle().checkpoint(
+    "guitar.onset", ROOT / "checkpoints" / "guitar_v2" / "guitar_v2_onset" / "best.pt"
+)
+assert _DEFAULT_HYBRID_ONSET_CKPT is not None
 
 
 def _get_hybrid_charter(device: str | None = None) -> "GuitarHybridV2Charter":

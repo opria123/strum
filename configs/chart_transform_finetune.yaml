@@ -1,0 +1,29 @@
+# Copy this config and set dataset_manifest/output_dir for a local experiment.
+# Dataset records are paired human-authored charts; no public STRUM training
+# corpus is assumed or downloaded by this entrypoint.
+dataset_manifest: /path/to/local/dataset-manifest.json
+output_dir: /path/to/local/output-bundle
+model_id: chart-transform-expert-to-hard-baseline
+source_difficulty: Expert
+target_difficulty: Hard
+seed: 20260813
+validation_fraction: 0.2
+lane_count: 5
+alignment_tolerance_ms: 50.0
+hidden_dim: 32
+learning_rate: 0.001
+epochs: 20
+# ``auto`` selects cuda:0 when available; set cpu, cuda, or cuda:<index> explicitly.
+device: auto
+# Leave ``none`` for the chart-only baseline. To condition on local song
+# audio, use ``rms_onset_v1`` and point to a local-only audio manifest.
+# The manifest is not copied into the bundle; paths are resolved relative to it.
+audio_feature_mode: none
+audio_manifest: null
+audio_sample_rate: 16000
+audio_window_ms: 50.0
+audio_max_duration_seconds: 900.0
+# Optional compatible EventTransformMLP checkpoint to fine-tune.
+init_checkpoint: null
+# Optional Git SHA/revision of the STRUM source used for this run.
+strum_revision: null
