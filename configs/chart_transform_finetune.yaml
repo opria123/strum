@@ -1,0 +1,19 @@
+# Copy this config and set dataset_manifest/output_dir for a local experiment.
+# Dataset records are paired human-authored charts; no public STRUM training
+# corpus is assumed or downloaded by this entrypoint.
+dataset_manifest: /path/to/local/dataset-manifest.json
+output_dir: /path/to/local/output-bundle
+model_id: chart-transform-expert-to-hard-baseline
+source_difficulty: Expert
+target_difficulty: Hard
+seed: 20260813
+validation_fraction: 0.2
+lane_count: 5
+alignment_tolerance_ms: 50.0
+hidden_dim: 32
+learning_rate: 0.001
+epochs: 20
+# Optional compatible EventTransformMLP checkpoint to fine-tune.
+init_checkpoint: null
+# Optional Git SHA/revision of the STRUM source used for this run.
+strum_revision: null

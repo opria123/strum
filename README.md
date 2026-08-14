@@ -354,6 +354,55 @@ editor integration) to enforce it. Otherwise validation reports the declared
 revision as unverified, rather than treating source trees without Git metadata
 as incompatible.
 
+### Chart-pair fine-tuning prototype
+
+`scripts/train_chart_transform.py` is a small CPU-only baseline for learned
+chart-to-chart stages, including Expert → lower-difficulty experiments. It
+uses local paired chart events and a song-level split; it does not use audio or
+download data. Every dataset needs a `dataset-manifest.json` containing a
+non-empty `provenance` and `license`, plus JSONL pairs in the
+`strum-chart-pairs/v1` format. Copy
+`configs/chart_transform_finetune.yaml`, set the local paths, then run:
+
+```bash
+python scripts/train_chart_transform.py --config /path/to/experiment.yaml
+```
+
+The dataset manifest and each JSONL record are intentionally small and
+portable:
+
+```jsonc
+// dataset-manifest.json
+{
+  "schema_version": 1,
+  "format": "strum-chart-pairs/v1",
+  "dataset_id": "my-authorized-chart-pairs",
+  "records": "pairs.jsonl",
+  "provenance": "where and how the paired charts were obtained",
+  "license": "license or permission covering model-training use"
+}
+// pairs.jsonl (one JSON object per line)
+{
+  "song_id": "stable-song-id",
+  "source_difficulty": "Expert",
+  "target_difficulty": "Hard",
+  "source_events": [{"time_ms": 1000, "lanes": [0, 2]}],
+  "target_events": [{"time_ms": 1000, "lanes": [0]}]
+}
+```
+
+`lanes` are zero-based 5-fret/lane indices by default. A target event is
+matched to its nearest Expert event within `alignment_tolerance_ms`; unmatched
+Expert events learn the all-off target. This deliberately modest baseline does
+not yet model target-only inserted notes or ergonomic sequence decisions.
+
+The output is a registry-valid bundle plus reproducibility config, split IDs,
+provenance/license, alignment counts, and validation metrics. Set
+`init_checkpoint` to a compatible prior `EventTransformMLP` checkpoint to
+fine-tune it. STRUM releases weights and a benchmark manifest, not its
+original community-chart training corpus; supply only chart pairs you are
+authorized to use.
+
 ## Development
 
 Developed on NVIDIA DGX Spark (GB10 GPU, CUDA 12.8). Trained on ~5,000 human-authored pro drum charts from the Clone Hero community.
