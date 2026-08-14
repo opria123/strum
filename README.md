@@ -440,25 +440,39 @@ should use guitar/stem-aware temporal windows and report a held-out,
 song-disjoint comparison against the chart-only baseline.
 
 To prepare authorized, extracted Clone Hero/YARG charts locally, use the
-guitar-only bridge on directories of `notes.mid` files (or pass a text list
-with `--list-file`):
+five-lane bridge on directories of `notes.mid` files (or pass a text list with
+`--list-file`). Build one dataset per instrument:
 
 ```bash
-python scripts/prepare_guitar_chart_pairs.py \
+python scripts/prepare_instrument_chart_pairs.py \
   --input /path/to/extracted-song-folders \
   --output-dir /path/to/local/guitar-expert-hard \
+  --instrument guitar \
   --target-difficulty Hard \
   --dataset-id my-guitar-pairs-v1 \
   --provenance "authorized local chart export" \
   --license "permission recorded by the dataset owner"
 ```
 
-It reads only `PART GUITAR`, groups the standard 5-lane MIDI ranges (Expert
-96–100; Hard 84–88; Medium 72–76; Easy 60–64), and writes `pairs.jsonl` plus
-`dataset-manifest.json`. Open notes and modifier notes are excluded from this
-first 5-lane baseline. Song IDs combine a sanitized parent-folder label and a
-content hash, so output records do not reveal absolute input paths. Existing
+It supports `PART GUITAR`, `PART BASS`, `PART KEYS`, and `PART DRUMS` through
+the same standard 5-lane MIDI ranges (Expert 96–100; Hard 84–88; Medium 72–76;
+Easy 60–64), and writes `pairs.jsonl` plus `dataset-manifest.json`. Each
+dataset and resulting component is instrument-labelled, so a Bass model cannot
+be mistaken for Guitar. Open notes and modifier notes are excluded from this
+first five-lane baseline. Song IDs combine a sanitized parent-folder label and
+a content hash, so output records do not reveal absolute input paths. Existing
 dataset files are preserved unless `--overwrite` is explicitly supplied.
+
+For compatibility with the earlier Guitar-only prototype, an old
+`strum-chart-pairs/v1` manifest or record without `instrument` is treated as
+Guitar and the resulting component is labelled accordingly. New exports always
+write the explicit instrument label.
+
+`PART VOCALS` and Pro Guitar/Pro Keys deliberately do not pass through this
+five-lane bridge: vocals are pitch/phrase/lyric sequences and Pro instruments
+use fret/string semantics. They need their own event schemas and losses, not a
+lossy conversion to five lanes. The original
+`prepare_guitar_chart_pairs.py` remains a compatible Guitar-default alias.
 
 The output is a registry-valid bundle plus reproducibility config, split IDs,
 provenance/license, alignment counts, and validation metrics. Set

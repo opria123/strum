@@ -144,6 +144,7 @@ def main() -> None:
         raise SystemExit("checkpoint has no valid lane_count")
     events = load_source_events(args.source_events, lane_count)
     result: dict[str, Any] = {
+        "instrument": checkpoint.get("instrument"),
         "source_difficulty": checkpoint.get("source_difficulty"),
         "target_difficulty": checkpoint.get("target_difficulty"),
         "events": predict(

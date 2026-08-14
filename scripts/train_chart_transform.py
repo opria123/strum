@@ -169,6 +169,17 @@ def load_dataset(config: TrainingConfig) -> tuple[list[ChartPair], dict[str, Any
             raise DatasetValidationError(f"dataset manifest requires non-empty {field}")
     if manifest.get("schema_version") != 1 or manifest.get("format") != DATASET_SCHEMA:
         raise DatasetValidationError(f"dataset manifest must use format {DATASET_SCHEMA} schema 1")
+    dataset_instrument = manifest.get("instrument", "guitar")
+    if dataset_instrument not in {
+        "guitar",
+        "bass",
+        "keys",
+        "drums",
+    }:
+        raise DatasetValidationError(
+            "dataset manifest instrument must be a supported five-lane instrument"
+        )
+    manifest["instrument"] = dataset_instrument
     records_value = manifest["records"]
     if not isinstance(records_value, str):
         raise DatasetValidationError("dataset manifest records must be a relative JSONL path")
@@ -185,6 +196,13 @@ def load_dataset(config: TrainingConfig) -> tuple[list[ChartPair], dict[str, Any
             raise DatasetValidationError(
                 f"invalid JSONL record at line {line_number}: {error}"
             ) from error
+        if (
+            not isinstance(raw_pair, dict)
+            or raw_pair.get("instrument", "guitar") != dataset_instrument
+        ):
+            raise DatasetValidationError(
+                f"record {line_number} instrument does not match dataset manifest"
+            )
         pairs.append(_parse_pair(raw_pair, config, line_number))
     if not pairs:
         raise DatasetValidationError("dataset has no chart pairs")
@@ -525,6 +543,7 @@ def train(config: TrainingConfig) -> dict[str, Any]:
             "audio_sample_rate": config.audio_sample_rate,
             "audio_window_ms": config.audio_window_ms,
             "audio_max_duration_seconds": config.audio_max_duration_seconds,
+            "instrument": dataset_manifest.get("instrument"),
             "source_difficulty": config.source_difficulty,
             "target_difficulty": config.target_difficulty,
         },
@@ -537,9 +556,12 @@ def train(config: TrainingConfig) -> dict[str, Any]:
         json.dumps(portable_config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    component_name = (
-        f"chart_transform.{_slug(config.source_difficulty)}_to_{_slug(config.target_difficulty)}"
+    component_name_parts = ["chart_transform"]
+    component_name_parts.append(_slug(dataset_manifest["instrument"]))
+    component_name_parts.append(
+        f"{_slug(config.source_difficulty)}_to_{_slug(config.target_difficulty)}"
     )
+    component_name = ".".join(component_name_parts)
     compatibility: dict[str, Any] = {
         "manifest_schema": MANIFEST_SCHEMA_VERSION,
         "strum_version": f">={__version__}",
@@ -567,6 +589,7 @@ def train(config: TrainingConfig) -> dict[str, Any]:
             "format": dataset_manifest["format"],
             "provenance": dataset_manifest["provenance"],
             "license": dataset_manifest["license"],
+            "instrument": dataset_manifest.get("instrument"),
         },
         "split": {
             "unit": "song_id",

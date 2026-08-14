@@ -67,6 +67,7 @@ def test_cpu_chart_pair_training_writes_valid_model_bundle(tmp_path: Path) -> No
     records = [
         {
             "song_id": "song-a",
+            "instrument": "bass",
             "source_difficulty": "Expert",
             "target_difficulty": "Hard",
             "source_events": [{"time_ms": 0, "lanes": [0]}, {"time_ms": 500, "lanes": [1, 2]}],
@@ -74,6 +75,7 @@ def test_cpu_chart_pair_training_writes_valid_model_bundle(tmp_path: Path) -> No
         },
         {
             "song_id": "song-b",
+            "instrument": "bass",
             "source_difficulty": "Expert",
             "target_difficulty": "Hard",
             "source_events": [{"time_ms": 0, "lanes": [3]}, {"time_ms": 400, "lanes": [4]}],
@@ -92,6 +94,7 @@ def test_cpu_chart_pair_training_writes_valid_model_bundle(tmp_path: Path) -> No
                 "records": "pairs.jsonl",
                 "provenance": "synthetic test fixture; replace with documented local chart provenance",
                 "license": "test-only",
+                "instrument": "bass",
             }
         )
     )
@@ -116,10 +119,11 @@ def test_cpu_chart_pair_training_writes_valid_model_bundle(tmp_path: Path) -> No
     metadata = json.loads((output_dir / "training-metadata.json").read_text())
 
     assert bundle.model_id == "test-expert-to-hard"
-    assert bundle.component("chart_transform.expert_to_hard") is not None
+    assert bundle.component("chart_transform.bass.expert_to_hard") is not None
     assert bundle.validate(check_files=True, verify_hashes=True) == []
     assert metadata["dataset"]["provenance"].startswith("synthetic")
     assert metadata["dataset"]["license"] == "test-only"
+    assert metadata["dataset"]["instrument"] == "bass"
     assert set(metadata["split"]["train_song_ids"]).isdisjoint(
         metadata["split"]["validation_song_ids"]
     )
@@ -221,6 +225,7 @@ def test_audio_conditioned_training_and_inference_keep_song_paths_local(tmp_path
     source_events = (ChartEvent(100.0, (0,)), ChartEvent(500.0, (1,)))
 
     assert checkpoint["audio_feature_dim"] == 2
+    assert checkpoint["instrument"] == "guitar"
     assert metadata["audio_conditioning"]["audio_manifest_sha256"]
     assert str(audio_manifest) not in portable_config
     with pytest.raises(ValueError, match="requires --song"):
