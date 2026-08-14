@@ -305,6 +305,26 @@ Each MIDI contains up to 5 instrument tracks:
 
 Four difficulty levels per instrument: Expert, Hard, Medium, Easy (progressive note reduction).
 
+## OCTAVE song-source catalogs
+
+STRUM treats OCTAVE's `octave-song-source-catalog/v1` as its common local
+training-source boundary. OCTAVE imports `.sng`, `.rb3con`, ZIP, and song-folder
+sources, makes the rights decision, and materializes managed assets. STRUM then
+validates asset hashes and selects only `training_use: allowed` records for an
+instrument-specific task view; it does not parse external package formats or
+persist original source paths.
+
+```bash
+python -m src.song_source_catalog /path/to/catalog
+python -m src.song_source_catalog /path/to/catalog --instrument guitar --audio-role guitar
+```
+
+The first command validates the catalog and all asset hashes. The second emits
+only safe `source_id` values for rights-approved Guitar records with a Guitar
+audio asset. Task tokenizers and dataset builders should use the Python API
+`load_catalog()` and `select_training_sources()` rather than reading catalog
+JSONL or source packages directly.
+
 ## Development
 
 Developed on NVIDIA DGX Spark (GB10 GPU, CUDA 12.8). Trained on ~5,000 human-authored pro drum charts from the Clone Hero community.
