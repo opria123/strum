@@ -30,6 +30,7 @@ from src.models.guitar_v1 import (  # noqa: E402
     GuitarOnsetCRNN, GuitarFretClassifier,
     OnsetCRNNConfig, FretClassifierConfig,
 )
+from src.model_bundle import get_active_bundle  # noqa: E402
 import preprocess_guitar_windows as pgw  # noqa: E402
 
 log = logging.getLogger("guitar_neural")
@@ -281,7 +282,10 @@ def export_events_to_midi(
 # call for the neural pipeline without changing its surrounding code.
 # Returns the same GuitarChart dataclass used elsewhere in the project.
 
-_DEFAULT_ONSET_CKPT = ROOT / "checkpoints" / "guitar_v2" / "guitar_v2_onset" / "best.pt"
+_DEFAULT_ONSET_CKPT = get_active_bundle().checkpoint(
+    "guitar.onset", ROOT / "checkpoints" / "guitar_v2" / "guitar_v2_onset" / "best.pt"
+)
+assert _DEFAULT_ONSET_CKPT is not None
 _DEFAULT_FRET_CKPT  = ROOT / "checkpoints" / "guitar_v2" / "guitar_v2_fret"  / "best.pt"
 
 # Per-bit fret thresholds tuned on the val split via

@@ -305,6 +305,55 @@ Each MIDI contains up to 5 instrument tracks:
 
 Four difficulty levels per instrument: Expert, Hard, Medium, Easy (progressive note reduction).
 
+## Custom model bundles
+
+The repository `checkpoints/` layout remains the default. To evaluate or ship
+a fine-tuned model without replacing it, set `STRUM_MODEL_BUNDLE` to a
+directory containing `strum-model-bundle.json` (or directly to that file).
+Each path is relative to the manifest, so a bundle can be copied as one
+directory. Components not declared by a bundle keep using the repository
+defaults, which makes small targeted experiments safe.
+
+```json
+{
+  "schema_version": 1,
+  "model_id": "drums-v14-finetune-2026-08",
+  "compatibility": {
+    "manifest_schema": 1,
+    "strum_version": ">=0.1.0",
+    "strum_revision": "<pinned-strum-git-revision>"
+  },
+  "components": {
+    "drums.v14_onset": {
+      "checkpoint": "weights/best.pt",
+      "sha256": "<64-character lowercase sha256>"
+    },
+    "drums.ensemble.v17": {
+      "checkpoint": "weights/v17-best.pt",
+      "config": "configs/onset_classifier_v17.yaml"
+    },
+    "guitar.onset": {"checkpoint": "weights/guitar-onset.pt"}
+  }
+}
+```
+
+Validate a candidate without loading model weights, or list valid bundles in
+a user model directory:
+
+```bash
+python -m src.model_bundle validate /path/to/bundle --check-files --verify-hashes
+python -m src.model_bundle list /path/to/models
+```
+
+Current production integration recognizes `drums.v14_onset`,
+`drums.ensemble.v2` through `drums.ensemble.v17`, and `guitar.onset`.
+`compatibility.strum_revision` is optional but recommended for portable
+bundles: it records the STRUM Git revision the model was trained against. Set
+`STRUM_SOURCE_REVISION` to the source revision pinned by a caller (such as an
+editor integration) to enforce it. Otherwise validation reports the declared
+revision as unverified, rather than treating source trees without Git metadata
+as incompatible.
+
 ## Development
 
 Developed on NVIDIA DGX Spark (GB10 GPU, CUDA 12.8). Trained on ~5,000 human-authored pro drum charts from the Clone Hero community.
