@@ -26,7 +26,6 @@ from src import __version__
 from src.model_bundle import MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION
 from src.models.chart_transform import EventTransformMLP
 
-
 DATASET_SCHEMA = "strum-chart-pairs/v1"
 
 
@@ -48,11 +47,12 @@ class TrainingConfig:
     hidden_dim: int = 32
     learning_rate: float = 0.001
     epochs: int = 20
+    device: str = "auto"
     init_checkpoint: str | None = None
     strum_revision: str | None = None
 
     @classmethod
-    def from_mapping(cls, raw: dict[str, Any]) -> "TrainingConfig":
+    def from_mapping(cls, raw: dict[str, Any]) -> TrainingConfig:
         fields = set(cls.__dataclass_fields__)
         unknown = set(raw) - fields
         missing = {"dataset_manifest", "output_dir", "model_id", "source_difficulty", "target_difficulty"} - set(raw)
@@ -69,6 +69,7 @@ class TrainingConfig:
             raise DatasetValidationError("lane_count, hidden_dim, and epochs must be positive")
         if config.learning_rate <= 0 or config.alignment_tolerance_ms < 0:
             raise DatasetValidationError("learning_rate must be positive and alignment_tolerance_ms non-negative")
+        _resolve_device(config.device)
         if config.strum_revision is not None and not config.strum_revision.strip():
             raise DatasetValidationError("strum_revision must be non-empty when provided")
         if config.init_checkpoint is not None and not config.init_checkpoint.strip():
@@ -184,6 +185,43 @@ def _parse_events(
     return tuple(sorted(events, key=lambda event: event.time_ms))
 
 
+def _resolve_device(requested: str) -> torch.device:
+    """Resolve a CPU or CUDA device without silently ignoring an explicit request."""
+    if not isinstance(requested, str) or not requested.strip():
+        raise DatasetValidationError("device must be auto, cpu, cuda, or cuda:<index>")
+    normalized = requested.strip().lower()
+    if normalized == "auto":
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    try:
+        device = torch.device(normalized)
+    except RuntimeError as error:
+        raise DatasetValidationError("device must be auto, cpu, cuda, or cuda:<index>") from error
+    if device.type not in {"cpu", "cuda"}:
+        raise DatasetValidationError("device must be auto, cpu, cuda, or cuda:<index>")
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise DatasetValidationError("CUDA was requested but is not available")
+        index = torch.cuda.current_device() if device.index is None else device.index
+        if index >= torch.cuda.device_count():
+            raise DatasetValidationError(
+                f"CUDA device index {index} is unavailable; found {torch.cuda.device_count()} device(s)"
+            )
+        return torch.device(f"cuda:{index}")
+    return device
+
+
+def _device_metadata(requested: str, device: torch.device) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "requested": requested,
+        "resolved": str(device),
+        "cuda_available": torch.cuda.is_available(),
+    }
+    if device.type == "cuda":
+        metadata["cuda_device_count"] = torch.cuda.device_count()
+        metadata["cuda_device_name"] = torch.cuda.get_device_name(device)
+    return metadata
+
+
 def split_by_song(pairs: list[ChartPair], seed: int, validation_fraction: float) -> tuple[list[ChartPair], list[ChartPair]]:
     song_ids = sorted({pair.song_id for pair in pairs})
     random.Random(seed).shuffle(song_ids)
@@ -252,18 +290,25 @@ def _seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     torch.use_deterministic_algorithms(True)
 
 
 def train(config: TrainingConfig) -> dict[str, Any]:
     """Train on local pairs and write a self-describing registry-compatible bundle."""
     _seed_everything(config.seed)
+    device = _resolve_device(config.device)
     pairs, dataset_manifest = load_dataset(config)
     train_pairs, validation_pairs = split_by_song(pairs, config.seed, config.validation_fraction)
     train_features, train_targets, train_unmatched = _make_tensors(train_pairs, config)
     validation_features, validation_targets, validation_unmatched = _make_tensors(validation_pairs, config)
+    train_features = train_features.to(device)
+    train_targets = train_targets.to(device)
+    validation_features = validation_features.to(device)
+    validation_targets = validation_targets.to(device)
 
-    model = EventTransformMLP(lane_count=config.lane_count, hidden_dim=config.hidden_dim)
+    model = EventTransformMLP(lane_count=config.lane_count, hidden_dim=config.hidden_dim).to(device)
     initialization: dict[str, str] | None = None
     if config.init_checkpoint:
         initial_path = Path(config.init_checkpoint).expanduser().resolve()
@@ -295,7 +340,7 @@ def train(config: TrainingConfig) -> dict[str, Any]:
     model_config_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": {name: tensor.detach().cpu() for name, tensor in model.state_dict().items()},
             "model_type": "EventTransformMLP",
             "lane_count": config.lane_count,
             "hidden_dim": config.hidden_dim,
@@ -345,6 +390,7 @@ def train(config: TrainingConfig) -> dict[str, Any]:
             "tolerance_ms": config.alignment_tolerance_ms,
             "unmatched_target_events": {"train": train_unmatched, "validation": validation_unmatched},
         },
+        "runtime": {"device": _device_metadata(config.device, device)},
         "metrics": metrics,
     }
     if initialization:
@@ -368,12 +414,13 @@ def _slug(value: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a local chart-pair transform model (CPU only).")
+    parser = argparse.ArgumentParser(description="Train a local chart-pair transform model on CPU or CUDA.")
     parser.add_argument("--config", required=True, help="YAML training configuration")
     parser.add_argument("--dataset-manifest", help="override dataset_manifest in the YAML config")
     parser.add_argument("--output-dir", help="override output_dir in the YAML config")
     parser.add_argument("--epochs", type=int, help="override epochs in the YAML config")
     parser.add_argument("--seed", type=int, help="override seed in the YAML config")
+    parser.add_argument("--device", help="override device: auto, cpu, cuda, or cuda:<index>")
     parser.add_argument("--init-checkpoint", help="optional compatible checkpoint to fine-tune")
     return parser.parse_args()
 
@@ -388,6 +435,7 @@ def main() -> None:
             "output_dir": args.output_dir,
             "epochs": args.epochs,
             "seed": args.seed,
+            "device": args.device,
             "init_checkpoint": args.init_checkpoint,
         }.items()
         if value is not None

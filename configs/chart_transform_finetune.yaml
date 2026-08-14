@@ -13,6 +13,8 @@ alignment_tolerance_ms: 50.0
 hidden_dim: 32
 learning_rate: 0.001
 epochs: 20
+# ``auto`` selects cuda:0 when available; set cpu, cuda, or cuda:<index> explicitly.
+device: auto
 # Optional compatible EventTransformMLP checkpoint to fine-tune.
 init_checkpoint: null
 # Optional Git SHA/revision of the STRUM source used for this run.

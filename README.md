@@ -356,7 +356,7 @@ as incompatible.
 
 ### Chart-pair fine-tuning prototype
 
-`scripts/train_chart_transform.py` is a small CPU-only baseline for learned
+`scripts/train_chart_transform.py` is a small CPU/CUDA baseline for learned
 chart-to-chart stages, including Expert → lower-difficulty experiments. It
 uses local paired chart events and a song-level split; it does not use audio or
 download data. Every dataset needs a `dataset-manifest.json` containing a
@@ -367,6 +367,13 @@ non-empty `provenance` and `license`, plus JSONL pairs in the
 ```bash
 python scripts/train_chart_transform.py --config /path/to/experiment.yaml
 ```
+
+Set `device: auto` to train on `cuda:0` when CUDA is available (otherwise CPU),
+or set `device: cpu`, `device: cuda`, or `device: cuda:<index>` explicitly. The resolved device
+and CUDA adapter name are recorded in `training-metadata.json`; an explicit
+CUDA request fails clearly when that device is unavailable. The small baseline
+is intended to validate data and bundle plumbing, so meaningful GPU utilization
+requires a larger windowed dataset and sequence model.
 
 The dataset manifest and each JSONL record are intentionally small and
 portable:
