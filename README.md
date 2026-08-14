@@ -358,8 +358,10 @@ as incompatible.
 
 `scripts/train_chart_transform.py` is a small CPU/CUDA baseline for learned
 chart-to-chart stages, including Expert → lower-difficulty experiments. It
-uses local paired chart events and a song-level split; it does not use audio or
-download data. Every dataset needs a `dataset-manifest.json` containing a
+uses local paired chart events and a song-level split. It can also condition
+each source event on a local song through a small RMS/transient feature vector;
+it never packages song audio or paths into the dataset export or model bundle.
+Every dataset needs a `dataset-manifest.json` containing a
 non-empty `provenance` and `license`, plus JSONL pairs in the
 `strum-chart-pairs/v1` format. Copy
 `configs/chart_transform_finetune.yaml`, set the local paths, then run:
@@ -402,6 +404,40 @@ portable:
 matched to its nearest Expert event within `alignment_tolerance_ms`; unmatched
 Expert events learn the all-off target. This deliberately modest baseline does
 not yet model target-only inserted notes or ergonomic sequence decisions.
+
+To condition training on songs, keep the private audio mapping separate from
+the portable chart-pair dataset. Set `audio_feature_mode: rms_onset_v1` and
+`audio_manifest` in the training config (or pass both
+`--audio-feature-mode rms_onset_v1 --audio-manifest ...`). Paths are relative
+to the audio manifest, so it can live next to a private local song library
+without copying audio to the dataset or bundle:
+
+```json
+{
+  "schema_version": 1,
+  "format": "strum-local-audio-assets/v1",
+  "assets": [
+    {"song_id": "stable-song-id", "audio": "song.ogg"}
+  ]
+}
+```
+
+`ffmpeg` decodes local audio to bounded mono PCM for this prototype. The
+checkpoint records the feature schema and requires the same `--song` during
+inference:
+
+```bash
+python scripts/infer_chart_transform.py \
+  --checkpoint /path/to/bundle/weights/chart_transform.pt \
+  --source-events /path/to/expert-events.json \
+  --song /path/to/local/song.ogg \
+  --output /path/to/hard-events.json
+```
+
+This is an audio-conditioned event baseline, not a learned audio encoder. It
+is useful for validating the data contract and song alignment; the next model
+should use guitar/stem-aware temporal windows and report a held-out,
+song-disjoint comparison against the chart-only baseline.
 
 To prepare authorized, extracted Clone Hero/YARG charts locally, use the
 guitar-only bridge on directories of `notes.mid` files (or pass a text list

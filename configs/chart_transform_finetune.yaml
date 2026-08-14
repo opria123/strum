@@ -15,6 +15,14 @@ learning_rate: 0.001
 epochs: 20
 # ``auto`` selects cuda:0 when available; set cpu, cuda, or cuda:<index> explicitly.
 device: auto
+# Leave ``none`` for the chart-only baseline. To condition on local song
+# audio, use ``rms_onset_v1`` and point to a local-only audio manifest.
+# The manifest is not copied into the bundle; paths are resolved relative to it.
+audio_feature_mode: none
+audio_manifest: null
+audio_sample_rate: 16000
+audio_window_ms: 50.0
+audio_max_duration_seconds: 900.0
 # Optional compatible EventTransformMLP checkpoint to fine-tune.
 init_checkpoint: null
 # Optional Git SHA/revision of the STRUM source used for this run.
