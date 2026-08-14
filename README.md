@@ -396,6 +396,27 @@ matched to its nearest Expert event within `alignment_tolerance_ms`; unmatched
 Expert events learn the all-off target. This deliberately modest baseline does
 not yet model target-only inserted notes or ergonomic sequence decisions.
 
+To prepare authorized, extracted Clone Hero/YARG charts locally, use the
+guitar-only bridge on directories of `notes.mid` files (or pass a text list
+with `--list-file`):
+
+```bash
+python scripts/prepare_guitar_chart_pairs.py \
+  --input /path/to/extracted-song-folders \
+  --output-dir /path/to/local/guitar-expert-hard \
+  --target-difficulty Hard \
+  --dataset-id my-guitar-pairs-v1 \
+  --provenance "authorized local chart export" \
+  --license "permission recorded by the dataset owner"
+```
+
+It reads only `PART GUITAR`, groups the standard 5-lane MIDI ranges (Expert
+96–100; Hard 84–88; Medium 72–76; Easy 60–64), and writes `pairs.jsonl` plus
+`dataset-manifest.json`. Open notes and modifier notes are excluded from this
+first 5-lane baseline. Song IDs combine a sanitized parent-folder label and a
+content hash, so output records do not reveal absolute input paths. Existing
+dataset files are preserved unless `--overwrite` is explicitly supplied.
+
 The output is a registry-valid bundle plus reproducibility config, split IDs,
 provenance/license, alignment counts, and validation metrics. Set
 `init_checkpoint` to a compatible prior `EventTransformMLP` checkpoint to
